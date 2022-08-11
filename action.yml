@@ -1,5 +1,5 @@
 name: 'Zenodo New Version'
-description: 'Creates a new version of the provided Zenodo Deposition'
+description: 'Creates a new version of the provided Zenodo deposition'
 branding:
   icon: 'upload-cloud'
   color: 'green'
@@ -7,10 +7,6 @@ inputs:
   zenodo_deposition_id:
     description: 'The ID of the Zenodo Deposition to create a new version of.'
     required: true
-  whitelist_replace_doi:
-    description: 'The file with a filename per line in which the doi should be replaced'
-    required: false
-    default: '.zenodo_whitelist_replace_doi'
   zenodo_server:
     description: 'The URL of the Zenodo Server to use, set "https://zenodo.org" for production'
     required: false
@@ -18,6 +14,13 @@ inputs:
   zenodo_token:
     description: 'The Auth Token for Zenodo'
     required: true
+outputs:
+  latest_doi:
+    description: "DOI of the latest deposition"
+    value: ${{ steps.retrieve_dois.outputs.latest_doi}}
+  reserved_doi:
+    description: "Reserved DOI of the new draft"
+    value: ${{ steps.retrieve_dois.outputs.reserved_doi}}
 runs:
   using: "composite"
   steps:
@@ -47,26 +50,15 @@ runs:
         # Create new version
         cat .tmp_zenodo_deposition.json
         zenodo-rest depositions new-version .tmp_zenodo_deposition.json --dest .tmp_zenodo_deposition.json
-    - name: Replace DOIs
+        
+    - name: Retrieve DOIs of latest deposition and new draft
+      id: retrieve_dois
       shell: bash
       env:
         ZENODO_TOKEN: ${{ inputs.zenodo_token }}
         ZENODO_URL: ${{ inputs.zenodo_server }}
       run: |
-        if test ! -f ${{ inputs.whitelist_replace_doi }}; then exit; fi
-        # Replace DOI in whiteliste files
         LATEST_DOI=$(zenodo-rest depositions doi latest .tmp_zenodo_deposition.json)
-        echo "LATEST_DOI: $LATEST_DOI"
-        LATEST_DRAFT_DOI=$(zenodo-rest depositions doi latest-draft .tmp_zenodo_deposition.json)
-        echo "LATEST_DRAFT_DOI: $LATEST_DRAFT_DOI"
-        xargs -a ${{ inputs.whitelist_replace_doi }} -I {}\
-          awk -i inplace -v t="$LATEST_DOI" -v r="$LATEST_DRAFT_DOI" "{gsub(t,r);}1" {}
-    - name: Cleanup 
-      shell: bash
-      run: |
-        if test ! -f .tmp_zenodo_deposition.json
-        then
-          echo "Nothing to cleanup, exiting early"
-          exit
-         fi
-        rm .tmp_zenodo_deposition.json
+        echo "::set-output name=latest_doi::$LATEST_DOI"
+        RESERVED_DOI=$(zenodo-rest depositions doi latest-draft .tmp_zenodo_deposition.json)
+        echo "::set-output name=reserved_doi::$RESERVED_DOI"
